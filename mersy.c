@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <sys/sysinfo.h>
+#include <unistd.h>
 
 #include <gmp.h>
 
@@ -148,24 +148,42 @@ void* CalculationThread(void *context)
 	pthread_exit(context);
 }
 
+void usage(void)
+{
+	printf("mersy [<starting P value>]\n");
+}
+
 int main(int argc, char *argv[])
 {
 	PCALC_THREAD_CONTEXT threads;
 	int threadCount, i, err;
 	unsigned long long st;
 
-	threadCount = get_nprocs();
+	if (argc > 2)
+	{
+		usage();
+		return -1;
+	}
+
+	if (argc >= 2)
+	{
+		// Read the starting value from the parameter list
+		st = atoi(argv[1]);
+	}
+	else
+	{
+		// Default starts at 2
+		st = 2;
+	}
+
+	threadCount = sysconf(_SC_NPROCESSORS_ONLN);
 
 	threads = (PCALC_THREAD_CONTEXT) malloc(sizeof(*threads) * threadCount);
 	if (threads == NULL)
 		return -1;
 
-
 	pthread_mutex_init(&TerminationMutex, NULL);
 	pthread_cond_init(&TerminationVariable, NULL);
-
-	// Start P at 2
-	st = 2;
 
 	// Setup some initial state of the thread contexts
 	for (i = 0; i < threadCount; i++)

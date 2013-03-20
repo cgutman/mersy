@@ -1,7 +1,7 @@
 # Mersy Makefile
 
 CC=gcc
-CFLAGS=-Wall -Werror -O3 -march=corei7-avx -mfpmath=sse -mavx -static
+CFLAGS=-Wall -Werror -O3 -static
 
 all: mersy
 
