@@ -17,8 +17,14 @@
 
 typedef struct _CALC_THREAD_CONTEXT
 {
+	// Thread parameters
 	mpz_t stP, endP;
+
+	// Thread temporaries
 	mpz_t nextPrime;
+	int setBits;
+
+	// Thread tracking
 	pthread_t id;
 	int threadIndex;
 } CALC_THREAD_CONTEXT, *PCALC_THREAD_CONTEXT;
@@ -92,7 +98,7 @@ void* CalculationThread(void *context)
 
 	// We don't set every bit each time, because we're guaranteed
 	// that p > oldP. We just set the bits that weren't set before.
-	i = 0;
+	i = tcontext->setBits;
 
 	// Loop until P is >= endP
 	while ((p = mpz_get_ui(tcontext->stP)) < endP)
@@ -134,6 +140,9 @@ void* CalculationThread(void *context)
 		// Skip to the next P
 		mpz_nextprime(tcontext->stP, tcontext->stP);
 	}
+
+	// Write the i value back
+	tcontext->setBits = i;
 
 	// Set the termination bit to notify the arbiter that this thread needs to be respawned
 	// with more work.
@@ -193,8 +202,9 @@ int main(int argc, char *argv[])
 		mpz_init(threads[i].stP);
 		mpz_init(threads[i].endP);
 
-		// Initialize the temp for this thread
+		// Initialize the temps for this thread
 		mpz_init(threads[i].nextPrime);
+		threads[i].setBits = 0;
 
 		// Set termination bit in order for the arbiter to respawn the thread
 		TerminationBits |= (1 << i);
