@@ -18,6 +18,7 @@
 typedef struct _CALC_THREAD_CONTEXT
 {
 	mpz_t stP, endP;
+	mpz_t nextPrime;
 	pthread_t id;
 	int threadIndex;
 } CALC_THREAD_CONTEXT, *PCALC_THREAD_CONTEXT;
@@ -73,37 +74,38 @@ int PrimeTest(unsigned long p, mpz_t *potentialPrime)
 void* CalculationThread(void *context)
 {
 	PCALC_THREAD_CONTEXT tcontext = (PCALC_THREAD_CONTEXT)context;
-	mpz_t nextPrime, nextP;
 	unsigned long p, i, endP;
 	int primality;
 
 	// Fetch the end P value
 	endP = mpz_get_ui(tcontext->endP);
 
-	// Initialize the GMP variables
-	mpz_init_set(nextP, tcontext->stP);
-	mpz_init(nextPrime);
+	// Realloc storage for the prime. We actually know the number
+	// of bits that the prime will contain at maximum because we know
+	// what the end P value will be. This is convenient because GMP can
+	// preallocate this memory for us and save us time during calculations.
+	mpz_realloc2(tcontext->nextPrime, endP);
 
-	// Decrement nextP and jump to the next prime
-	mpz_sub_ui(nextP, nextP, 1);
-	mpz_nextprime(nextP, nextP);
+	// Decrement stP and jump to the next prime
+	mpz_sub_ui(tcontext->stP, tcontext->stP, 1);
+	mpz_nextprime(tcontext->stP, tcontext->stP);
 
 	// We don't set every bit each time, because we're guaranteed
 	// that p > oldP. We just set the bits that weren't set before.
 	i = 0;
 
 	// Loop until P is >= endP
-	while ((p = mpz_get_ui(nextP)) < endP)
+	while ((p = mpz_get_ui(tcontext->stP)) < endP)
 	{
 		// Only set bits that weren't set before
 		while (i < p)
 		{
-			mpz_setbit(nextPrime, i);
+			mpz_setbit(tcontext->nextPrime, i);
 			i++;
 		}
 
 		// Check the result for primality
-		primality = mpz_probab_prime_p(nextPrime, DIVISIONS_FOR_PRIMALITY);
+		primality = mpz_probab_prime_p(tcontext->nextPrime, DIVISIONS_FOR_PRIMALITY);
 		switch (primality)
 		{
 		case GMP_DEF_COMPOSITE:
@@ -112,7 +114,7 @@ void* CalculationThread(void *context)
 
 		case GMP_PROB_PRIME:
 			// Probably prime, but we need to check for sure
-			if (PrimeTest(p, &nextPrime) != GMP_DEF_PRIME)
+			if (PrimeTest(p, &tcontext->nextPrime) != GMP_DEF_PRIME)
 			{
 				// More extensive test showed it was composite
 				break;
@@ -123,19 +125,15 @@ void* CalculationThread(void *context)
 		case GMP_DEF_PRIME:
 			// Definitely prime
 			printf("Thread %d --- Mersenne prime found (P=%lu): ", tcontext->threadIndex, p);
-			mpz_out_str(stdout, 10, nextPrime);
+			mpz_out_str(stdout, 10, tcontext->nextPrime);
 			printf("\n");
 			fflush(stdout);
 			break;
 		}
 
 		// Skip to the next P
-		mpz_nextprime(nextP, nextP);
+		mpz_nextprime(tcontext->stP, tcontext->stP);
 	}
-
-	// Free the GMP variables
-	mpz_clear(nextP);
-	mpz_clear(nextPrime);
 
 	// Set the termination bit to notify the arbiter that this thread needs to be respawned
 	// with more work.
@@ -194,6 +192,9 @@ int main(int argc, char *argv[])
 		// Initialize the start and end GMP variables
 		mpz_init(threads[i].stP);
 		mpz_init(threads[i].endP);
+
+		// Initialize the temp for this thread
+		mpz_init(threads[i].nextPrime);
 
 		// Set termination bit in order for the arbiter to respawn the thread
 		TerminationBits |= (1 << i);
