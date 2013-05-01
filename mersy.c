@@ -5,7 +5,7 @@
 #include <gmp.h>
 
 // Configurable settings
-#define DIVISIONS_FOR_PRIMALITY (3)
+#define DIVISIONS_FOR_PRIMALITY (1)
 #define P_RANGE_PER_THREAD (100)
 
 // Definitions related to GMP for convenience
@@ -45,12 +45,9 @@ int PrimeTest(unsigned long p, mpz_t *potentialPrime)
 {
 	mpz_t s;
 	unsigned long i;
-	int cmp;
 
 	// LLT starts at 4
 	mpz_init_set_ui(s, 4);
-
-	printf("LLT(P=%lu) START\n", p);
 
 	// LLT loop
 	for (i = 0; i < p - 2; i++)
@@ -60,28 +57,18 @@ int PrimeTest(unsigned long p, mpz_t *potentialPrime)
 		mpz_mod(s, s, *potentialPrime);
 	}
 
-	printf("LLT(P=%lu) END\n", p);
-
-	cmp = mpz_cmp_ui(s, 0);
-	if (cmp == 0)
-	{
-		return GMP_DEF_PRIME;
-	}
-	else
-	{
-		printf("LLT(P=%lu) LIAR (Residue: %lu)\n", p, mpz_get_ui(s));
-		return GMP_DEF_COMPOSITE;
-	}
+	return (mpz_cmp_ui(s, 0) == 0) ? GMP_DEF_PRIME : GMP_DEF_COMPOSITE;
 }
 
 // stP is inclusive; endP is exclusive
 void* CalculationThread(void *context)
 {
 	PCALC_THREAD_CONTEXT tcontext = (PCALC_THREAD_CONTEXT)context;
-	unsigned long p, i, endP;
-	int primality;
+	unsigned long stP, p, i, endP;
+	unsigned int primality;
 
-	// Fetch the end P value
+	// Fetch the start and end P value
+	stP = mpz_get_ui(tcontext->stP);
 	endP = mpz_get_ui(tcontext->endP);
 
 	// Realloc storage for the prime. We actually know the number
@@ -141,6 +128,10 @@ void* CalculationThread(void *context)
 
 	// Write the i value back
 	tcontext->setBits = i;
+
+	// Print the thread finished message
+	printf("Thread %d: Finished P=%lu to P=%lu\n", tcontext->threadIndex, stP, endP);
+	fflush(stdout);
 
 	// Set the termination bit to notify the arbiter that this thread needs to be respawned
 	// with more work.
@@ -207,6 +198,7 @@ void FindPrimes(unsigned int ThreadCount, unsigned int StartingPValue)
 
 				printf("Thread %d: Starting P=%lu to P=%lu\n", i,
 				        mpz_get_ui(threads[i].stP), mpz_get_ui(threads[i].endP));
+				fflush(stdout);
 
 				// Spawn another thread
 				err = pthread_create(&threads[i].id, NULL, CalculationThread, &threads[i]);
@@ -214,9 +206,6 @@ void FindPrimes(unsigned int ThreadCount, unsigned int StartingPValue)
 					return;
 			}
 		}
-
-		// Flush output stream
-		fflush(stdout);
 
 		// Wait on the termination bits to change. This releases the
 		// mutex while the wait is in progress to avoid a deadlock.
