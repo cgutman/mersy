@@ -41,7 +41,7 @@ pthread_cond_t TerminationVariable;
 
 
 // This PrimeTest implementation uses the Lucas-Lehmer primality test
-int PrimeTest(unsigned long p, mpz_t *potentialPrime)
+static int PrimeTest(unsigned long p, mpz_t *potentialPrime)
 {
 	mpz_t s;
 	unsigned long i;
@@ -61,7 +61,7 @@ int PrimeTest(unsigned long p, mpz_t *potentialPrime)
 }
 
 // stP is inclusive; endP is exclusive
-void* CalculationThread(void *context)
+static void* CalculationThread(void *context)
 {
 	PCALC_THREAD_CONTEXT tcontext = (PCALC_THREAD_CONTEXT)context;
 	unsigned long stP, p, i, endP;
