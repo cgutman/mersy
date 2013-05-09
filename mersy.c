@@ -151,12 +151,16 @@ void* CalculationThread(void *context)
 
 	// Return the thread context when we terminate
 	pthread_exit(context);
+
+	// pthread_exit() doesn't return
+	return NULL;
 }
 
 void FindPrimes(unsigned int ThreadCount, unsigned int StartingPValue)
 {
 	PCALC_THREAD_CONTEXT threads;
-	int i, err;
+	unsigned int i;
+	int err;
 
 	threads = (PCALC_THREAD_CONTEXT) malloc(sizeof(*threads) * ThreadCount);
 	if (threads == NULL)

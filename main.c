@@ -1,12 +1,28 @@
-#include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 
 #include "mersy.h"
 
+#ifdef _WIN32
+#include <Windows.h>
+#else
+#include <unistd.h>
+#endif
+
 void Usage(void)
 {
 	printf("mersy [<starting P value>]\n");
+}
+
+int GetOptimalThreadCount(void)
+{
+#ifdef _WIN32 /* Windows */
+	SYSTEM_INFO info;
+	GetSystemInfo(&info);
+	return info.dwNumberOfProcessors;
+#else /* POSIX */
+	return sysconf(_SC_NPROCESSORS_ONLN);
+#endif
 }
 
 int main(int argc, char *argv[])
@@ -30,8 +46,8 @@ int main(int argc, char *argv[])
 		startP = 2;
 	}
 
-	// We want as many threads as processors
-	threadCount = sysconf(_SC_NPROCESSORS_ONLN);
+	// Call the platform-specific code for CPU count detection
+	threadCount = GetOptimalThreadCount();
 
 	// Start the worker threads with this thread being the arbiter
 	FindPrimes(threadCount, startP);
