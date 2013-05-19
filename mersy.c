@@ -1,11 +1,13 @@
-#include <pthread.h>
+// Standard library
 #include <stdio.h>
 #include <stdlib.h>
 
+// 3rd party libraries
+#include <pthread.h>
 #include <gmp.h>
 
-// Configurable settings
-#define DIVISIONS_FOR_PRIMALITY (1)
+// Implementation-specific header (include last)
+#include "mersy.h"
 
 // Definitions related to GMP for convenience
 #define GMP_DEF_COMPOSITE (0)
@@ -77,6 +79,7 @@ static void* CalculationThread(void *context)
 	PCALC_THREAD_CONTEXT tcontext = (PCALC_THREAD_CONTEXT)context;
 	unsigned long P, setBits;
 	unsigned int primality;
+	char *primeStr;
 
 	setBits = 0;
 	for (;;)
@@ -85,8 +88,7 @@ static void* CalculationThread(void *context)
 		P = GetNextPrimeP();
 
 		// Print a message to the terminal
-		printf("Thread %d: Testing P=%lu\n", tcontext->threadIndex, P);
-		fflush(stdout);
+		PRINT_MSG(MSG_VERBOSE, "Thread %d: Testing P=%lu", tcontext->threadIndex, P);
 
 		// Only set bits that weren't set before
 		while (setBits < P)
@@ -115,10 +117,17 @@ static void* CalculationThread(void *context)
 
 		case GMP_DEF_PRIME:
 			// Definitely prime
-			printf("Thread %d --- Mersenne prime found (P=%lu): ", tcontext->threadIndex, P);
-			mpz_out_str(stdout, 10, tcontext->nextPrime);
-			printf("\n");
-			fflush(stdout);
+                        primeStr = mpz_get_str(NULL, 10, tcontext->nextPrime);
+			if (primeStr)
+			{
+				PRINT_MSG(MSG_INFO, "Thread %d --- Mersenne prime found (P=%lu): %s",
+				                          tcontext->threadIndex, P, primeStr);
+				free(primeStr);
+			}
+			else
+			{
+				PRINT_MSG(MSG_WARNING, "Unable to allocate memory to output prime!");
+			}
 			break;
 		}
 	}
@@ -157,13 +166,35 @@ void FindPrimes(unsigned int ThreadCount, unsigned int StartingPValue)
 		// Spawn the thread
 		err = pthread_create(&threads[i].id, NULL, CalculationThread, &threads[i]);
 		if (err)
-			return;
+		{
+			PRINT_MSG(MSG_WARNING, "Unable to create thread %d!", threads[i].threadIndex);
+
+			// Cleanup this thread's state
+			mpz_clear(threads[i].nextPrime);
+
+			// Modify the thread count to the actual number of created threads
+			ThreadCount = i;
+
+			// Execution can continue fine from here
+			break;
+		}
 	}
 
 	// Join the threads (which hopefully shouldn't terminate anyways)
 	for (i = 0; i < ThreadCount; i++)
 	{
 		pthread_join(threads[i].id, NULL);
-		printf("WARNING: Unexpected termination of thread %d!\n", threads[i].threadIndex);
+
+		PRINT_MSG(MSG_WARNING, "Unexpected termination of thread %d!", threads[i].threadIndex);
+
+		// Cleanup this thread's working state
+		mpz_clear(threads[i].nextPrime);
 	}
+
+	// Everybody's dead :(
+	mpz_clear(NextPrimeP);
+	pthread_mutex_destroy(&NextPMutex);
+	free(threads);
+
+	PRINT_MSG(MSG_ERROR, "All threads died!");
 }

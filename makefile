@@ -3,13 +3,13 @@
 CC=gcc
 CFLAGS=-Wall -Werror -O3 -static
 
-all: mersy main
-	$(CC) $(CFLAGS) main.o mersy.o -o mersy -pthread -lgmp
+all: mersy mersy-impl
+	$(CC) $(CFLAGS) mersy-impl.o mersy.o -o mersy -pthread -lgmp
 
-main: main.c mersy.h
-	$(CC) $(CFLAGS) -c main.c -o main.o
+mersy-impl: mersy-impl.c mersy.h mersy-impl.h
+	$(CC) $(CFLAGS) -c mersy-impl.c -o mersy-impl.o
 
-mersy: mersy.c mersy.h
+mersy: mersy.c mersy.h mersy-impl.h
 	$(CC) $(CFLAGS) -c mersy.c -o mersy.o
 
 clean:

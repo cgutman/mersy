@@ -1,19 +1,54 @@
+// Standard library includes
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 
+// Mersy definitions and our platform header
 #include "mersy.h"
 
+// Platform-specific headers
 #ifdef _WIN32
 #include <Windows.h>
 #else
 #include <unistd.h>
 #endif
 
+// Current trace level (prints all messages at this level and above)
+int TraceLevel = MSG_ALL;
+
+void PrintMsgHeader(int tag)
+{
+#define BUFF_LEN 100
+	char buff[100];
+	time_t now;
+
+	// Print the time
+	now = time(NULL);
+	strftime(buff, BUFF_LEN, "%m/%d/%Y %H:%M:%S", localtime(&now));
+	printf("%s ", buff);
+
+	// Print the tag header
+	switch (tag)
+	{
+		case MSG_WARNING:
+			printf("WARNING: ");
+			break;
+
+		case MSG_ERROR:
+			printf("ERROR: ");
+			break;
+
+		default:
+			break;
+	}
+#undef BUFF_LEN
+}
 void Usage(void)
 {
 	printf("mersy [<starting P value>]\n");
 }
 
+// Platform-specific function to get the number of threads to make
 int GetOptimalThreadCount(void)
 {
 #ifdef _WIN32 /* Windows */
