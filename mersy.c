@@ -152,13 +152,29 @@ void FindPrimes(unsigned int ThreadCount, unsigned int StartingPValue)
 	PCALC_THREAD_CONTEXT threads;
 	unsigned int i;
 	int err;
+	pthread_attr_t attr;
 
 	threads = (PCALC_THREAD_CONTEXT) malloc(sizeof(*threads) * ThreadCount);
 	if (threads == NULL)
 		return;
 
+	// Setup global termination state
 	pthread_mutex_init(&TerminationMutex, NULL);
 	pthread_cond_init(&TerminationVariable, NULL);
+
+	// Setup thread attributes
+	err = pthread_attr_init(&attr);
+	if (err)
+	{
+		free(threads);
+		return;
+	}
+
+	// We have to create "detached" threads, otherwise
+	// we'll leak resources since we don't join our threads.
+	err = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	if (err)
+		goto Exit;
 
 	// Setup some initial state of the thread contexts
 	for (i = 0; i < ThreadCount; i++)
@@ -201,9 +217,9 @@ void FindPrimes(unsigned int ThreadCount, unsigned int StartingPValue)
 				fflush(stdout);
 
 				// Spawn another thread
-				err = pthread_create(&threads[i].id, NULL, CalculationThread, &threads[i]);
-				if (err != 0)
-					return;
+				err = pthread_create(&threads[i].id, &attr, CalculationThread, &threads[i]);
+				if (err)
+					goto Exit;
 			}
 		}
 
@@ -214,5 +230,11 @@ void FindPrimes(unsigned int ThreadCount, unsigned int StartingPValue)
 		// initial setup of the threads.
 		pthread_cond_wait(&TerminationVariable, &TerminationMutex);
 	}
+
+Exit:
+	// We should only get here in an error case
 	pthread_mutex_unlock(&TerminationMutex);
+	pthread_attr_destroy(&attr);
+	free(threads);
+	return;
 }
