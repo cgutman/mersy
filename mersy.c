@@ -3,8 +3,8 @@
 #include <stdlib.h>
 
 // 3rd party libraries
-#include <pthread.h>
-#include <gmp.h>
+#include "pthread.h"
+#include "gmp.h"
 
 // Implementation-specific header (include last)
 #include "mersy.h"
