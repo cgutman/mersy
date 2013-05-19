@@ -6,7 +6,6 @@
 
 // Configurable settings
 #define DIVISIONS_FOR_PRIMALITY (1)
-#define P_RANGE_PER_THREAD (100)
 
 // Definitions related to GMP for convenience
 #define GMP_DEF_COMPOSITE (0)
@@ -15,22 +14,13 @@
 
 typedef struct _CALC_THREAD_CONTEXT
 {
-	// Thread parameters
-	mpz_t stP, endP;
-
 	// Thread temporaries
 	mpz_t nextPrime;
-	int setBits;
 
 	// Thread tracking
 	pthread_t id;
 	int threadIndex;
 } CALC_THREAD_CONTEXT, *PCALC_THREAD_CONTEXT;
-
-// This variable has bits set that represent the terminated status of calc threads
-unsigned long long TerminationBits;
-pthread_mutex_t TerminationMutex;
-pthread_cond_t TerminationVariable;
 
 // General note regarding the usage of mpz_nextprime():
 // This function CAN return numbers that are COMPOSITE in rare
@@ -39,6 +29,8 @@ pthread_cond_t TerminationVariable;
 // of primes returned, the less time the program will spend examining
 // numbers that are definitely not Mersenne primes.
 
+pthread_mutex_t NextPMutex;
+mpz_t NextPrimeP;
 
 // This PrimeTest implementation uses the Lucas-Lehmer primality test
 static int PrimeTest(unsigned long p, mpz_t *potentialPrime)
@@ -60,39 +52,47 @@ static int PrimeTest(unsigned long p, mpz_t *potentialPrime)
 	return (mpz_cmp_ui(s, 0) == 0) ? GMP_DEF_PRIME : GMP_DEF_COMPOSITE;
 }
 
-// stP is inclusive; endP is exclusive
+static unsigned long GetNextPrimeP(void)
+{
+	unsigned long nextP;
+
+	// Acquire the lock to safely modify the next P
+	pthread_mutex_lock(&NextPMutex);
+
+	// Store the existing value to return to the caller
+	nextP = mpz_get_ui(NextPrimeP);
+
+	// Compute the new value
+	mpz_nextprime(NextPrimeP, NextPrimeP);
+
+	// Release the lock
+	pthread_mutex_unlock(&NextPMutex);
+
+	return nextP;
+}
+
+// stP is inclusive and prime; endP is exclusive
 static void* CalculationThread(void *context)
 {
 	PCALC_THREAD_CONTEXT tcontext = (PCALC_THREAD_CONTEXT)context;
-	unsigned long stP, p, i, endP;
+	unsigned long P, setBits;
 	unsigned int primality;
 
-	// Fetch the start and end P value
-	stP = mpz_get_ui(tcontext->stP);
-	endP = mpz_get_ui(tcontext->endP);
-
-	// Realloc storage for the prime. We actually know the number
-	// of bits that the prime will contain at maximum because we know
-	// what the end P value will be. This is convenient because GMP can
-	// preallocate this memory for us and save us time during calculations.
-	mpz_realloc2(tcontext->nextPrime, endP);
-
-	// Decrement stP and jump to the next prime
-	mpz_sub_ui(tcontext->stP, tcontext->stP, 1);
-	mpz_nextprime(tcontext->stP, tcontext->stP);
-
-	// We don't set every bit each time, because we're guaranteed
-	// that p > oldP. We just set the bits that weren't set before.
-	i = tcontext->setBits;
-
-	// Loop until P is >= endP
-	while ((p = mpz_get_ui(tcontext->stP)) < endP)
+	setBits = 0;
+	for (;;)
 	{
+		// Reserve the next prime P value for us to test
+		P = GetNextPrimeP();
+
+		// Print a message to the terminal
+		printf("Thread %d: Testing P=%lu\n", tcontext->threadIndex, P);
+		fflush(stdout);
+
 		// Only set bits that weren't set before
-		while (i < p)
+		while (setBits < P)
 		{
-			mpz_setbit(tcontext->nextPrime, i);
-			i++;
+			mpz_setbit(tcontext->nextPrime, setBits);
+			setBits++;
 		}
 
 		// Check the result for primality
@@ -105,7 +105,7 @@ static void* CalculationThread(void *context)
 
 		case GMP_PROB_PRIME:
 			// Probably prime, but we need to check for sure
-			if (PrimeTest(p, &tcontext->nextPrime) != GMP_DEF_PRIME)
+			if (PrimeTest(P, &tcontext->nextPrime) != GMP_DEF_PRIME)
 			{
 				// More extensive test showed it was composite
 				break;
@@ -115,35 +115,15 @@ static void* CalculationThread(void *context)
 
 		case GMP_DEF_PRIME:
 			// Definitely prime
-			printf("Thread %d --- Mersenne prime found (P=%lu): ", tcontext->threadIndex, p);
+			printf("Thread %d --- Mersenne prime found (P=%lu): ", tcontext->threadIndex, P);
 			mpz_out_str(stdout, 10, tcontext->nextPrime);
 			printf("\n");
 			fflush(stdout);
 			break;
 		}
-
-		// Skip to the next P
-		mpz_nextprime(tcontext->stP, tcontext->stP);
 	}
 
-	// Write the i value back
-	tcontext->setBits = i;
-
-	// Print the thread finished message
-	printf("Thread %d: Finished P=%lu to P=%lu\n", tcontext->threadIndex, stP, endP);
-	fflush(stdout);
-
-	// Set the termination bit to notify the arbiter that this thread needs to be respawned
-	// with more work.
-	pthread_mutex_lock(&TerminationMutex);
-	TerminationBits |= (1ULL << tcontext->threadIndex);
-	pthread_cond_signal(&TerminationVariable);
-	pthread_mutex_unlock(&TerminationMutex);
-
-	// Return the thread context when we terminate
-	pthread_exit(context);
-
-	// pthread_exit() doesn't return
+	// Unreachable code
 	return NULL;
 }
 
@@ -152,89 +132,38 @@ void FindPrimes(unsigned int ThreadCount, unsigned int StartingPValue)
 	PCALC_THREAD_CONTEXT threads;
 	unsigned int i;
 	int err;
-	pthread_attr_t attr;
 
 	threads = (PCALC_THREAD_CONTEXT) malloc(sizeof(*threads) * ThreadCount);
 	if (threads == NULL)
 		return;
 
-	// Setup global termination state
-	pthread_mutex_init(&TerminationMutex, NULL);
-	pthread_cond_init(&TerminationVariable, NULL);
+	// Initialize the lock to synchronize fetching a new P value
+	pthread_mutex_init(&NextPMutex, NULL);
 
-	// Setup thread attributes
-	err = pthread_attr_init(&attr);
-	if (err)
-	{
-		free(threads);
-		return;
-	}
+	// Initialize the next prime P
+	mpz_init_set_ui(NextPrimeP, StartingPValue);
+	mpz_sub_ui(NextPrimeP, NextPrimeP, 1);
+	mpz_nextprime(NextPrimeP, NextPrimeP);
 
-	// We have to create "detached" threads, otherwise
-	// we'll leak resources since we don't join our threads.
-	err = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-	if (err)
-		goto Exit;
-
-	// Setup some initial state of the thread contexts
+	// Setup and start the threads
 	for (i = 0; i < ThreadCount; i++)
 	{
 		// Do one-time setup of thread context index
 		threads[i].threadIndex = i;
 
-		// Initialize the start and end GMP variables
-		mpz_init(threads[i].stP);
-		mpz_init(threads[i].endP);
-
 		// Initialize the temps for this thread
 		mpz_init(threads[i].nextPrime);
-		threads[i].setBits = 0;
 
-		// Set termination bit in order for the arbiter to respawn the thread
-		TerminationBits |= (1ULL << i);
+		// Spawn the thread
+		err = pthread_create(&threads[i].id, NULL, CalculationThread, &threads[i]);
+		if (err)
+			return;
 	}
 
-	// This is the arbitration loop that handles work assignments as threads complete
-	// their assigned work blocks.
-	pthread_mutex_lock(&TerminationMutex);
-	for (;;)
+	// Join the threads (which hopefully shouldn't terminate anyways)
+	for (i = 0; i < ThreadCount; i++)
 	{
-		for (i = 0; i < ThreadCount; i++)
-		{
-			// If the thread has indicated that it's terminated, respawn it.
-			if ((1ULL << i) & TerminationBits)
-			{
-				// Setup the context again
-				mpz_set_ui(threads[i].stP, StartingPValue);
-				StartingPValue += P_RANGE_PER_THREAD;
-				mpz_set_ui(threads[i].endP, StartingPValue);
-
-				// Clear the termination bit
-				TerminationBits &= ~(1ULL << i);
-
-				printf("Thread %d: Starting P=%lu to P=%lu\n", i,
-				        mpz_get_ui(threads[i].stP), mpz_get_ui(threads[i].endP));
-				fflush(stdout);
-
-				// Spawn another thread
-				err = pthread_create(&threads[i].id, &attr, CalculationThread, &threads[i]);
-				if (err)
-					goto Exit;
-			}
-		}
-
-		// Wait on the termination bits to change. This releases the
-		// mutex while the wait is in progress to avoid a deadlock.
-		// The function returns with the mutex locked. These mutex operations
-		// are atomic. This wait is done after the loop in order to handle the
-		// initial setup of the threads.
-		pthread_cond_wait(&TerminationVariable, &TerminationMutex);
+		pthread_join(threads[i].id, NULL);
+		printf("WARNING: Unexpected termination of thread %d!\n", threads[i].threadIndex);
 	}
-
-Exit:
-	// We should only get here in an error case
-	pthread_mutex_unlock(&TerminationMutex);
-	pthread_attr_destroy(&attr);
-	free(threads);
-	return;
 }
