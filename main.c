@@ -21,7 +21,7 @@ int GetOptimalThreadCount(void)
 	GetSystemInfo(&info);
 	return info.dwNumberOfProcessors;
 #else /* POSIX */
-	return sysconf(_SC_NPROCESSORS_ONLN);
+	return sysconf(_SC_NPROCESSORS_CONF);
 #endif
 }
 
