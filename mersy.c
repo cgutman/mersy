@@ -117,7 +117,7 @@ static void* CalculationThread(void *context)
 
 		case GMP_DEF_PRIME:
 			// Definitely prime
-                        primeStr = mpz_get_str(NULL, 10, tcontext->nextPrime);
+			primeStr = mpz_get_str(NULL, 10, tcontext->nextPrime);
 			if (primeStr)
 			{
 				PRINT_MSG(MSG_INFO, "Thread %d --- Mersenne prime found (P=%lu): %s",

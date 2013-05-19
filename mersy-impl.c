@@ -16,10 +16,11 @@
 // Current trace level (prints all messages at this level and above)
 int TraceLevel = MSG_ALL;
 
+// Prints the default message header
 void PrintMsgHeader(int tag)
 {
 #define BUFF_LEN 100
-	char buff[100];
+	char buff[BUFF_LEN];
 	time_t now;
 
 	// Print the time
