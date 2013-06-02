@@ -142,6 +142,11 @@ void FindPrimes(unsigned int ThreadCount, unsigned int StartingPValue)
 	unsigned int i;
 	int err;
 
+	PRINT_MSG(MSG_INFO, "Mersy %d.%d (built with GMP %d.%d.%d)",
+	          __MERSY_MAJOR_VER, __MERSY_MINOR_VER,
+	          __GNU_MP_VERSION, __GNU_MP_VERSION_MINOR,
+	          __GNU_MP_VERSION_PATCHLEVEL);
+
 	threads = (PCALC_THREAD_CONTEXT) malloc(sizeof(*threads) * ThreadCount);
 	if (threads == NULL)
 		return;
