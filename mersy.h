@@ -4,6 +4,10 @@
 #ifndef __MERSY_H
 #define __MERSY_H
 
+// Version
+#define __MERSY_MAJOR_VER 2
+#define __MERSY_MINOR_VER 0
+
 // Message tags
 #define MSG_ALL     0
 #define MSG_VERBOSE 1
