@@ -1,6 +1,7 @@
 // Standard library
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // 3rd party libraries
 #include "pthread.h"
@@ -33,6 +34,7 @@ typedef struct _CALC_THREAD_CONTEXT
 
 pthread_mutex_t NextPMutex;
 mpz_t NextPrimeP;
+void (*GmpFree)(void *, size_t);
 
 // This PrimeTest implementation uses the Lucas-Lehmer primality test
 static int PrimeTest(unsigned long p, mpz_t *potentialPrime)
@@ -122,7 +124,7 @@ static void* CalculationThread(void *context)
 			{
 				PRINT_MSG(MSG_INFO, "Thread %d --- Mersenne prime found (P=%lu): %s",
 				                          tcontext->threadIndex, P, primeStr);
-				free(primeStr);
+				GmpFree(primeStr, strlen(primeStr)+1);
 			}
 			else
 			{
@@ -150,6 +152,9 @@ void FindPrimes(unsigned int ThreadCount, unsigned int StartingPValue)
 	threads = (PCALC_THREAD_CONTEXT) malloc(sizeof(*threads) * ThreadCount);
 	if (threads == NULL)
 		return;
+
+	// Get a pointer to the GMP free function
+	mp_get_memory_functions(NULL, NULL, &GmpFree);
 
 	// Initialize the lock to synchronize fetching a new P value
 	pthread_mutex_init(&NextPMutex, NULL);
